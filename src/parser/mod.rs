@@ -142,8 +142,8 @@ pub struct Parser<'a> {
     buf_pos: usize,
     has_buf: bool,
     config: ParserConfig,
-    /// Tracks all parameter references found during parsing (name, position)
-    referenced_params: Vec<(String, Position)>,
+    /// Tracks all parameter references found during parsing.
+    referenced_params: Vec<Param>,
     /// Comments collected during parsing (when preserve_comments is enabled).
     comments: Vec<Comment>,
     expression_parse_depth: usize,
@@ -273,21 +273,23 @@ impl<'a> Parser<'a> {
 
         // Validate parameter references if enabled
         if self.config.validate_params {
-            for (param_name, param_pos) in &self.referenced_params {
-                if !self.config.params.contains(param_name) {
+            for param in &self.referenced_params {
+                if !self.config.params.contains(&param.name) {
                     return Err(ParseError::syntax(
-                        format!("param ${param_name} referenced, but not provided"),
-                        *param_pos,
+                        format!("param ${} referenced, but not provided", param.name),
+                        param.pos,
                     ));
                 }
             }
         }
 
         let comments = std::mem::take(&mut self.comments);
+        let params = std::mem::take(&mut self.referenced_params);
         Ok(ParseResult {
             expr: expr.node,
             functions,
             comments,
+            params,
         })
     }
 
@@ -851,15 +853,14 @@ impl<'a> Parser<'a> {
         match tok {
             Token::Name => {
                 if let Some(stripped) = lit.strip_prefix('$') {
-                    let param_pos = self.make_token_pos(pos, lit);
-                    // Track this parameter reference for validation
-                    self.referenced_params
-                        .push((stripped.to_string(), param_pos));
+                    let param = Param {
+                        pos: self.make_token_pos(pos, lit),
+                        name: stripped.to_string(),
+                    };
+                    // Track this parameter reference for validation and the parse result.
+                    self.referenced_params.push(param.clone());
                     return Ok(Some(Parsed {
-                        node: Expr::Param(Param {
-                            pos: param_pos,
-                            name: stripped.to_string(),
-                        }),
+                        node: Expr::Param(param),
                         depth: 1,
                     }));
                 }

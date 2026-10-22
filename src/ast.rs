@@ -394,6 +394,19 @@ pub struct ParseResult {
     pub expr: Expr,
     pub functions: Vec<FunctionDefinition>,
     pub comments: Vec<Comment>,
+    /// `$param` references found in the query, in source order.
+    ///
+    /// Includes uses in filters, projections, slice/element bounds, function
+    /// call arguments, and custom function bodies. Each occurrence is recorded
+    /// separately (the same name may appear more than once).
+    ///
+    /// Parameter *declarations* in `fn` signatures (the `$a` in
+    /// `fn ns::f($a) = ...`) are not included. Uses of those names inside the
+    /// function body are included — the same references
+    /// [`crate::parser::ParserConfig::validate_params`] checks. Consumers that
+    /// want only externally supplied query parameters can ignore names listed
+    /// in [`FunctionDefinition::parameters`] for the enclosing function.
+    pub params: Vec<Param>,
 }
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]

@@ -567,6 +567,83 @@ fn test_parse_no_functions() {
     assert_eq!(result.functions.len(), 0);
 }
 
+// ==================== PARAMETER REFERENCES ====================
+
+#[test]
+fn test_params_empty_when_none_referenced() {
+    let mut parser = Parser::new("*[_type == \"movie\"]{title}");
+    let result = parser.parse().unwrap();
+    assert!(result.params.is_empty());
+}
+
+#[test]
+fn test_params_single_reference() {
+    let src = "$myParam";
+    let mut parser = Parser::new(src);
+    let result = parser.parse().unwrap();
+    assert_eq!(result.params.len(), 1);
+    assert_eq!(result.params[0].name, "myParam");
+    assert_eq!(
+        result.params[0].pos,
+        Position {
+            start: 0,
+            end: src.len()
+        }
+    );
+}
+
+#[test]
+fn test_params_in_filter_projection_slice_and_args() {
+    let mut parser = Parser::new(
+        r#"*[_type == $type && author._ref == $authorId]{$title}[$start..$end] | order($field)"#,
+    );
+    let result = parser.parse().unwrap();
+    let names: Vec<&str> = result.params.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(
+        names,
+        vec!["type", "authorId", "title", "start", "end", "field"]
+    );
+    for param in &result.params {
+        assert!(param.pos.start < param.pos.end);
+        assert_eq!(
+            &r#"*[_type == $type && author._ref == $authorId]{$title}[$start..$end] | order($field)"#
+                [param.pos.start..param.pos.end],
+            format!("${}", param.name)
+        );
+    }
+}
+
+#[test]
+fn test_params_duplicate_names_preserve_each_span() {
+    let src = "*[_id == $id]{title}[$id]";
+    let mut parser = Parser::new(src);
+    let result = parser.parse().unwrap();
+    assert_eq!(result.params.len(), 2);
+    assert_eq!(result.params[0].name, "id");
+    assert_eq!(result.params[1].name, "id");
+    assert_ne!(result.params[0].pos, result.params[1].pos);
+    assert_eq!(
+        &src[result.params[0].pos.start..result.params[0].pos.end],
+        "$id"
+    );
+    assert_eq!(
+        &src[result.params[1].pos.start..result.params[1].pos.end],
+        "$id"
+    );
+}
+
+#[test]
+fn test_params_include_uses_in_custom_function_bodies() {
+    // Declarations in `fn` signatures are not listed; body uses are (including
+    // function-local names), matching validate_params behavior.
+    let src = "fn math::double($n) = $n * $factor; *[_type == $type]";
+    let mut parser = Parser::new(src);
+    let result = parser.parse().unwrap();
+    let names: Vec<&str> = result.params.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, vec!["n", "factor", "type"]);
+    assert_eq!(result.functions[0].parameters[0].name, "n");
+}
+
 // ==================== COMMENTS ====================
 
 #[test]
